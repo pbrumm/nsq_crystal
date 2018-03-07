@@ -1,4 +1,4 @@
-name: nsq_crystal
+name: nsq
 version: 0.1.0
 
 authors:
@@ -7,3 +7,7 @@ authors:
 crystal: 0.21.1
 
 license: MIT
+
+dependencies:
+  expect:
+    github: dukex/expect.cr

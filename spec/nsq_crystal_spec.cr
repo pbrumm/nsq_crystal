@@ -1,9 +1,9 @@
-require "./spec_helper"
+# require "./spec_helper"
 
-describe NsqCrystal do
-  # TODO: Write tests
+# describe Nsq do
+#   # TODO: Write tests
 
-  it "works" do
-    false.should eq(true)
-  end
-end
+#   it "works" do
+#     false.should eq(true)
+#   end
+# end

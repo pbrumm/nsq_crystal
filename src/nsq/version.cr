@@ -1,3 +1,3 @@
-module NsqCrystal
+module Nsq
   VERSION = "0.1.0"
 end
