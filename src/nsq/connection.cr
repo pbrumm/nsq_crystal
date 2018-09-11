@@ -296,8 +296,8 @@ module Nsq
     end
 
     private def identify
-      # hostname = Socket.gethostname
-      hostname = "test"
+      hostname = System.hostname + ":" + Process.pid.to_s
+      # hostname = "test"
       metadata = {
         client_id:             hostname,
         hostname:              hostname,
