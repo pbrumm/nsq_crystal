@@ -40,7 +40,8 @@ module Nsq
     #
     # If all nsqlookupd's are unreachable, raises Nsq::DiscoveryException
     #
-    def nsqds_for_topic(topic = String)
+    def nsqds_for_topic(topic : String)
+      # p [:in_for_topic, topic]
       gather_nsqds_from_all_lookupds do |lookupd|
         get_nsqds(lookupd, topic)
       end
@@ -76,11 +77,11 @@ module Nsq
 
       begin
         response = HTTP::Client.get(uri)
+
         if response.status_code == 200
           data = JSON.parse(response.body)
           producers = data["producers"].as_a if data["producers"].as_a? # v1.0.0-compat
-          producers ||= data["data"]["producers"].as_a if data["data"].as_h? && data["data"]["producers"].as_a?
-
+          producers ||= data["data"]["producers"].as_a if data["data"]? && data["data"]["producers"].as_a?
           if producers
             return producers.map do |producer|
               "#{producer["broadcast_address"]}:#{producer["tcp_port"]}"
