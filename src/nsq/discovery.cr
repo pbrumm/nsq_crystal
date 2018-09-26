@@ -93,7 +93,7 @@ module Nsq
           return Array(String).new
         end
       rescue e : Exception
-        error "Error during discovery for #{lookupd}: #{e}"
+        puts "Error during discovery for #{lookupd}: #{e}"
         nil
       end
     end
