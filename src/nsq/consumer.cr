@@ -100,13 +100,15 @@ module Nsq
 
     private def add_connection(nsqd, options = Opts.new)
       options ||= Opts.new
-      super(nsqd.as(String), {
+      connection = super(nsqd.as(String), {
         :topic         => @topic,
         :channel       => @channel,
         :queue         => @messages,
         :msg_timeout   => @msg_timeout,
-        :max_in_flight => 1,
+        :max_in_flight => @max_in_flight,
       }.merge(options))
+      # connection.topic_create(@topic)
+      connection
     end
 
     # Be conservative, but don't set a connection's max_in_flight below 1

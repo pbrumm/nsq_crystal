@@ -556,7 +556,7 @@ module Nsq
         begin
           attempts += 1
           return block.call(attempts)
-        rescue ex : Socket::Error
+        rescue ex : Socket::Error | IO::Error | Errno
           p ex
           raise ex if attempts >= 100
 
