@@ -465,7 +465,11 @@ module Nsq
         warn "Died from: #{cause_of_death}"
 
         debug "Reconnecting..."
-        reconnect
+        begin
+          reconnect
+        rescue e : Exception
+          p [:reconnecting_from_death, e.message]
+        end
         debug "Reconnected!"
 
         # clear all death messages, since we're now reconnected.
@@ -478,7 +482,12 @@ module Nsq
     # close the connection if it's not already closed and try to reconnect
     # over and over until we succeed!
     private def reconnect
-      close_connection
+      begin
+        close_connection
+      rescue e2 : Exception
+        p [:problem_closing, e2.message]
+      end
+
       with_retries do
         # p "reconnecting"
         open_connection
@@ -547,7 +556,7 @@ module Nsq
     # https://github.com/ooyala/retries/blob/master/lib/retries.rb
     private def with_retries(&block : Int32 -> _)
       base_sleep_seconds = 0.5
-      max_sleep_seconds = 300 # 5 minutes
+      max_sleep_seconds = 30 # 5 minutes
 
       # Let's do this thing
       attempts = 0
@@ -556,13 +565,13 @@ module Nsq
         begin
           attempts += 1
           return block.call(attempts)
-        rescue ex : Socket::Error | IO::Error | Errno
+        rescue ex : Socket::Error | IO::Error | Errno | Exception
           p ex
           raise ex if attempts >= 100
 
           # The sleep time is an exponentially-increasing function of base_sleep_seconds.
           # But, it never exceeds max_sleep_seconds.
-          sleep_seconds = [base_sleep_seconds * (2 ** (attempts - 1)), max_sleep_seconds].min
+          sleep_seconds = [base_sleep_seconds * (1.2 ** (attempts - 1)), max_sleep_seconds].min
           # Randomize to a random value in the range sleep_seconds/2 .. sleep_seconds
           sleep_seconds = sleep_seconds * (0.5 * (1 + rand()))
           # But never sleep less than base_sleep_seconds
@@ -571,6 +580,8 @@ module Nsq
           warn "Failed to connect: #{ex}. Retrying in #{sleep_seconds.round(1)} seconds."
 
           snooze(sleep_seconds)
+        rescue e : Exception
+          p [:uncaught, e.message, e]
         end
       end
       if ex

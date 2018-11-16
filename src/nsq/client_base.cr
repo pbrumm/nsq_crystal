@@ -6,10 +6,10 @@ module Nsq
   class ClientBase
     include Nsq::AttributeLogger
     @@log_attributes = [:topic]
-
     getter :topic
     getter :connections
     @discovery_active = true
+    @add_connection_mutex = Mutex.new
 
     def connected?
       @connections.values.any? { |c| !c.connected? }
@@ -98,6 +98,12 @@ module Nsq
 
     private def drop_and_add_connections(nsqds : Array(String))
       # drop nsqd connections that are no longer in lookupd
+      @connections.each { |k, nsqd|
+        p [:checking_health, k, nsqd.connected?]
+        unless nsqd.connected?
+          drop_connection(k, nsqd)
+        end
+      }
       missing_nsqds = @connections.keys - nsqds
       missing_nsqds.each do |nsqd|
         drop_connection(nsqd)
@@ -107,34 +113,47 @@ module Nsq
       new_nsqds = nsqds - @connections.keys
       new_nsqds.each do |nsqd|
         begin
+          p [:adding_nsq, nsqd]
           add_connection(nsqd, Opts.new)
         rescue ex : Exception
           error "Failed to connect to nsqd @ #{nsqd}: #{ex}"
         end
       end
-
+      p [:connections_size, @connections.size]
       # balance RDY state amongst the connections
       connections_changed
     end
 
     private def add_connection(nsqd : String, options : Opts)
-      info "+ Adding connection #{nsqd}"
-      host, port = nsqd.split(':')
-      connection = Connection.new({
-        :host => host,
-        :port => port.to_i,
-        # :ssl_context => @ssl_context,
-        # :tls_options => @tls_options,
-        # :tls_v1 => @tls_v1,
-      }.merge(options))
-      @connections[nsqd] = connection
+      @add_connection_mutex.synchronize do
+        return if @connections.has_key?(nsqd)
+        info "+ Adding connection #{nsqd}"
+        host, port = nsqd.split(':')
+        connection = Connection.new({
+          :host => host,
+          :port => port.to_i,
+          # :ssl_context => @ssl_context,
+          # :tls_options => @tls_options,
+          # :tls_v1 => @tls_v1,
+        }.merge(options))
+        @connections[nsqd] = connection
+      end
     end
 
-    private def drop_connection(nsqd)
+    private def drop_connection(nsqd, instance = nil)
       info "- Dropping connection #{nsqd}"
-      connection = @connections.delete(nsqd)
-      connection.close if connection
-      connections_changed
+      if instance
+        instance.close
+        i2 = @connections.delete(nsqd)
+        if i2 && i2 != instance
+          i2.close
+        end
+        connections_changed
+      else
+        connection = @connections.delete(nsqd)
+        connection.close if connection
+        connections_changed
+      end
     end
 
     private def drop_all_connections
