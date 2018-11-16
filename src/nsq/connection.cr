@@ -461,14 +461,14 @@ module Nsq
       loop do
         # wait for death, hopefully it never comes
         cause_of_death = @death_queue.receive
-        p [:death, cause_of_death]
+        # p [:death, cause_of_death]
         warn "Died from: #{cause_of_death}"
 
         debug "Reconnecting..."
         begin
           reconnect
         rescue e : Exception
-          p [:reconnecting_from_death, e.message]
+          # p [:reconnecting_from_death, e.message]
         end
         debug "Reconnected!"
 
@@ -485,7 +485,7 @@ module Nsq
       begin
         close_connection
       rescue e2 : Exception
-        p [:problem_closing, e2.message]
+        # p [:problem_closing, e2.message]
       end
 
       with_retries do
@@ -566,7 +566,7 @@ module Nsq
           attempts += 1
           return block.call(attempts)
         rescue ex : Socket::Error | IO::Error | Errno | Exception
-          p ex
+          # p ex
           raise ex if attempts >= 100
 
           # The sleep time is an exponentially-increasing function of base_sleep_seconds.
@@ -576,7 +576,7 @@ module Nsq
           sleep_seconds = sleep_seconds * (0.5 * (1 + rand()))
           # But never sleep less than base_sleep_seconds
           sleep_seconds = [base_sleep_seconds, sleep_seconds].max
-          puts "failed to connect"
+          # puts "failed to connect"
           warn "Failed to connect: #{ex}. Retrying in #{sleep_seconds.round(1)} seconds."
 
           snooze(sleep_seconds)

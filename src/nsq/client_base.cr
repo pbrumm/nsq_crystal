@@ -99,7 +99,7 @@ module Nsq
     private def drop_and_add_connections(nsqds : Array(String))
       # drop nsqd connections that are no longer in lookupd
       @connections.each { |k, nsqd|
-        p [:checking_health, k, nsqd.connected?]
+        # p [:checking_health, k, nsqd.connected?]
         unless nsqd.connected?
           drop_connection(k, nsqd)
         end
@@ -113,13 +113,13 @@ module Nsq
       new_nsqds = nsqds - @connections.keys
       new_nsqds.each do |nsqd|
         begin
-          p [:adding_nsq, nsqd]
+          # p [:adding_nsq, nsqd]
           add_connection(nsqd, Opts.new)
         rescue ex : Exception
           error "Failed to connect to nsqd @ #{nsqd}: #{ex}"
         end
       end
-      p [:connections_size, @connections.size]
+      # p [:connections_size, @connections.size]
       # balance RDY state amongst the connections
       connections_changed
     end
