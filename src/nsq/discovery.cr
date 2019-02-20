@@ -66,7 +66,7 @@ module Nsq
       uri_scheme = "http://" unless lookupd.match(%r(https?://))
       uri = URI.parse("#{uri_scheme}#{lookupd}")
 
-      query = "ts=#{Time.now.epoch}"
+      query = "ts=#{Time.now.to_unix}"
       if topic
         uri.path = "/lookup"
         query += "&topic=#{URI.escape(topic.as(String))}"
