@@ -79,6 +79,9 @@ module Nsq
             # We can't connect to any nsqlookupds. That's okay, we'll just
             # leave our current nsqd connections alone and try again later.
             # warn "Could not connect to any nsqlookupd instances in discovery loop"
+          rescue e : Exception
+            # Larger exception related to timout or other network issues.  
+            # Keep going
           end
           sleep opts[:interval].as(Int)
         end
@@ -111,10 +114,12 @@ module Nsq
 
       # add new ones
       new_nsqds = nsqds - @connections.keys
+      nsqd_opts = Opts.new
+      nsqd_opts[:connected_through_lookupd] = true
       new_nsqds.each do |nsqd|
         begin
-          # p [:adding_nsq, nsqd]
-          add_connection(nsqd, Opts.new)
+          #p [:adding_nsq, nsqd]
+          add_connection(nsqd, nsqd_opts.dup)
         rescue ex : Exception
           error "Failed to connect to nsqd @ #{nsqd}: #{ex}"
         end
@@ -141,18 +146,20 @@ module Nsq
     end
 
     private def drop_connection(nsqd, instance = nil)
-      info "- Dropping connection #{nsqd}"
-      if instance
-        instance.close
-        i2 = @connections.delete(nsqd)
-        if i2 && i2 != instance
-          i2.close
+      info "- Dropping connection #{nsqd}, #{instance}"
+      @add_connection_mutex.synchronize do
+        if instance
+          instance.close
+          i2 = @connections.delete(nsqd)
+          if i2 && i2 != instance
+            i2.close
+          end
+          connections_changed
+        else
+          connection = @connections.delete(nsqd)
+          connection.close if connection
+          connections_changed
         end
-        connections_changed
-      else
-        connection = @connections.delete(nsqd)
-        connection.close if connection
-        connections_changed
       end
     end
 

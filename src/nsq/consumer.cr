@@ -117,7 +117,9 @@ module Nsq
     end
 
     private def connections_changed
-      redistribute_ready
+      spawn do
+        redistribute_ready
+      end
     end
 
     private def redistribute_ready

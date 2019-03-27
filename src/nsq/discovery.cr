@@ -50,7 +50,7 @@ module Nsq
     private def gather_nsqds_from_all_lookupds
       nsqd_list = @lookupds.map do |lookupd|
         yield(lookupd)
-      end.flatten
+      end.flatten.uniq
 
       # All nsqlookupds were unreachable, raise an error!
       if nsqd_list.size > 0 && nsqd_list.all? { |nsqd| nsqd.nil? }
@@ -76,10 +76,37 @@ module Nsq
       uri.query = query
 
       begin
-        response = HTTP::Client.get(uri)
+        client_timed_out = false
+        client_completed = false
+        response : HTTP::Client::Response | Nil = nil
+        client_wait_until = 15.seconds.from_now
+        spawn do
+          begin
+            client = HTTP::Client.new(uri)
+            client.connect_timeout = 10.seconds
+            client.read_timeout    = 10.seconds
+            response = client.get(uri.full_path)
+            client_completed = true
+          rescue IO::Timeout
+            client_timed_out = true
+          end
+        end
+        loop do
+          if client_timed_out 
+            raise IO::Timeout.new
+          elsif client_completed
+            break
+          else
+            if client_wait_until > Time.now
+              sleep 0.05
+            else
+              raise IO::Timeout.new
+            end
+          end
+        end
 
-        if response.status_code == 200
-          data = JSON.parse(response.body)
+        if response && response.as(HTTP::Client::Response).status_code == 200
+          data = JSON.parse(response.as(HTTP::Client::Response).body)
           producers = data["producers"].as_a if data["producers"].as_a? # v1.0.0-compat
           producers ||= data["data"]["producers"].as_a if data["data"]? && data["data"]["producers"].as_a?
           if producers

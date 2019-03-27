@@ -29,11 +29,17 @@ module Nsq
     @queue : Channel(Message | Symbol)
     @server_version : String | Nil
     @max_in_flight : Int32
+    @last_heartbeat : Time | Nil
+    @connect_timed_out = false
+    @connect_completed = false
     presumed_in_flight = 0
+    @connected_through_lookupd = false
+    @in_reconnecting_loop = false
 
     def initialize(opts : Opts)
       @host = opts[:host].as(String) || (raise ArgumentError.new("host is required"))
       @port = opts[:port].as(Int32) || (raise ArgumentError.new("port is required"))
+
       if opts.has_key?(:queue)
         @queue = opts[:queue].as(Channel(Message | Symbol))
       else
@@ -60,6 +66,10 @@ module Nsq
         @max_in_flight = opts[:max_in_flight].as(Int32)
       else
         @max_in_flight = 1
+      end
+
+      if opts.has_key?(:connected_through_lookupd)
+        @connected_through_lookupd = opts[:connected_through_lookupd].as(Bool)
       end
       # if opts.has_key?(:tls_options)
       #   @tls_options = opts[:tls_options].as(Int64)
@@ -99,9 +109,11 @@ module Nsq
 
       @connected = false
       @presumed_in_flight = 0
-
-      open_connection
-      start_monitoring_connection
+      
+      on_successful_connection = Proc(Nil,Nil).new {
+        start_monitoring_connection
+      }
+      open_connection(on_successful_connection)
     end
 
     def stats(topic = nil, channel = nil)
@@ -112,7 +124,29 @@ module Nsq
       if channel
         additional = "&channel=#{channel}"
       end
-      response = HTTP::Client.get("http://#{@host}:#{@port + 1}/stats?format=json#{additional}")
+      stats_timed_out = false
+      stats_completed = false
+      response : String | Nil = nil
+      stats_wait_until = 30.seconds.from_now
+      spawn do
+        client = HTTP::Client.new("http://#{@host}:#{@port + 1}")
+        client.connect_timeout = 10.seconds
+        client.read_timeout    = 10.seconds
+        response = client.get("/stats?format=json#{additional}")
+        stats_completed = true
+      end
+      
+      loop do
+        if stats_completed
+          break
+        else
+          if stats_wait_until > Time.now
+            sleep 0.05
+          else
+            raise "stats_timed_out"
+          end
+        end
+      end
       if response.status_code == 200
         data = JSON.parse(response.body)
         return data
@@ -199,13 +233,27 @@ module Nsq
     end
 
     def connected?
-      @connected
+      if @connected
+        if @last_heartbeat.is_a?(Time)
+          if @last_heartbeat.as(Time) > 40.seconds.ago
+            true
+          else
+            false
+          end
+        else
+          true
+        end
+      else
+        false
+      end
     end
 
     # close the connection and don't try to re-open it
     def close
-      stop_monitoring_connection
-      close_connection
+      unless @in_reconnecting_loop
+        stop_monitoring_connection
+        close_connection
+      end
     end
 
     def sub(topic, channel)
@@ -333,6 +381,7 @@ module Nsq
       case frame.data
       when RESPONSE_HEARTBEAT
         debug "Received heartbeat"
+        @last_heartbeat = Time.now
         nop
       when RESPONSE_OK
         debug "Received OK"
@@ -348,12 +397,14 @@ module Nsq
     private def receive_frame
       size = IO::ByteFormat::NetworkEndian.decode(Int32, @socket.as(IO))
       type = IO::ByteFormat::NetworkEndian.decode(Int32, @socket.as(IO))
+      raise IO::Timeout.new if @connect_timed_out
 
       if type
         size -= 4 # we want the size of the data part and type already took up 4 bytes
         data = Slice(UInt8).new(size)
         # p [:read_data, size]
         @socket.as(IO).read(data)
+        raise IO::Timeout.new if @connect_timed_out
         frame_class = frame_class_for_type(type)
         # p [:read_data_done]
         return frame_class.new(data, self)
@@ -452,15 +503,19 @@ module Nsq
 
     private def stop_monitoring_connection
       if @connection_monitor_active
+        @connection_monitor_active = false
         @death_queue.send(:stop_connection_loop)
+      else
+        @connection_monitor_active = false
       end
-      @connection_monitor_active = false
+      
     end
 
     private def monitor_connection
       loop do
         # wait for death, hopefully it never comes
         cause_of_death = @death_queue.receive
+        break unless @connection_monitor_active
         # p [:death, cause_of_death]
         warn "Died from: #{cause_of_death}"
 
@@ -468,7 +523,7 @@ module Nsq
         begin
           reconnect
         rescue e : Exception
-          # p [:reconnecting_from_death, e.message]
+          sleep 0.01
         end
         debug "Reconnected!"
 
@@ -489,38 +544,70 @@ module Nsq
       end
 
       with_retries do
-        # p "reconnecting"
+        @in_reconnecting_loop = true
         open_connection
+        @in_reconnecting_loop = false
       end
     end
 
-    private def open_connection
-      @socket = TCPSocket.new(@host, @port)
+    private def open_connection(on_successful_connection : Proc(Nil, Nil) | Nil = nil)
+      @socket = TCPSocket.new(@host, @port, 10, 10)
       # write the version and IDENTIFY directly to the socket to make sure
       # it gets to nsqd ahead of anything in the `@write_queue`
       socket_block { |socket| socket.write("  V2".to_slice) }
-      identify
-      # upgrade_to_ssl_socket if @tls_v1
-
-      start_read_loop
-      start_write_loop
-      @connected = true
-
-      # we need to re-subscribe if there's a topic specified
-      if @topic
-        debug "Subscribing to #{@topic}"
-        sub(@topic, @channel)
-        re_up_ready
+      @connect_timed_out = false
+      @connect_completed = false
+      connect_expected_completion = 5.seconds.from_now
+      fiber = spawn do
+        begin
+          identify
+          # upgrade_to_ssl_socket if @tls_v1
+          next if @connect_timed_out
+          start_read_loop
+          start_write_loop
+          @connected = true
+          @last_heartbeat = Time.now
+          # we need to re-subscribe if there's a topic specified
+          if @topic
+            debug "Subscribing to #{@topic}"
+            sub(@topic, @channel)
+            re_up_ready
+          end
+          @connect_completed = true
+        rescue Exception
+          @connect_timed_out = true
+        end
+      end
+      loop do
+        if @connect_timed_out
+          raise IO::Timeout.new
+        elsif @connect_completed
+          break
+        else
+          if connect_expected_completion > Time.now 
+            sleep(0.01)
+          else
+            @connect_timed_out = true
+            raise "unable to connect"
+          end
+        end
+      end
+      if on_successful_connection
+        on_successful_connection.as(Proc(Nil,Nil)).call(nil)
       end
     end
 
     # closes the connection and stops listening for messages
     private def close_connection
-      cls if connected?
-      stop_write_loop
-      @socket.as(Socket).close if @socket
-      # @socket = nil
-      @connected = false
+      begin
+        cls if connected?
+        stop_write_loop
+        @socket.as(Socket).close if @socket
+        # @socket = nil
+        @connected = false
+      rescue e : Exception
+        
+      end
     end
 
     # this is called when there's a connection error in the read or write loop
@@ -556,18 +643,18 @@ module Nsq
     # https://github.com/ooyala/retries/blob/master/lib/retries.rb
     private def with_retries(&block : Int32 -> _)
       base_sleep_seconds = 0.5
-      max_sleep_seconds = 30 # 5 minutes
+      max_sleep_seconds = 15 # 30 second max sleep
 
+      max_attempts = @connected_through_lookupd ? 10 : 100
       # Let's do this thing
       attempts = 0
       ex = nil
-      while attempts < 102
+      while attempts < max_attempts + 2
         begin
           attempts += 1
           return block.call(attempts)
         rescue ex : Socket::Error | IO::Error | Errno | Exception
-          # p ex
-          raise ex if attempts >= 100
+          raise ex if attempts >= max_attempts
 
           # The sleep time is an exponentially-increasing function of base_sleep_seconds.
           # But, it never exceeds max_sleep_seconds.
@@ -581,7 +668,7 @@ module Nsq
 
           snooze(sleep_seconds)
         rescue e : Exception
-          p [:uncaught, e.message, e]
+          
         end
       end
       if ex
