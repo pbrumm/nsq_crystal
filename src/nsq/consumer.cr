@@ -113,7 +113,7 @@ module Nsq
 
     # Be conservative, but don't set a connection's max_in_flight below 1
     private def max_in_flight_per_connection(number_of_connections = @connections.size)
-      [@max_in_flight / number_of_connections, 1].max
+      [(@max_in_flight / number_of_connections).to_i, 1].max
     end
 
     private def connections_changed

@@ -66,7 +66,7 @@ module Nsq
       uri_scheme = "http://" unless lookupd.match(%r(https?://))
       uri = URI.parse("#{uri_scheme}#{lookupd}")
 
-      query = "ts=#{Time.now.to_unix}"
+      query = "ts=#{Time.utc.to_unix}"
       if topic
         uri.path = "/lookup"
         query += "&topic=#{URI.escape(topic.as(String))}"
@@ -84,7 +84,7 @@ module Nsq
           begin
             client = HTTP::Client.new(uri)
             client.connect_timeout = 10.seconds
-            client.read_timeout    = 10.seconds
+            client.read_timeout = 10.seconds
             response = client.get(uri.full_path)
             client_completed = true
           rescue IO::Timeout
@@ -92,7 +92,7 @@ module Nsq
           end
         end
         loop do
-          if client_timed_out 
+          if client_timed_out
             raise IO::Timeout.new
           elsif client_completed
             break

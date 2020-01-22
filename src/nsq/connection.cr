@@ -109,8 +109,8 @@ module Nsq
 
       @connected = false
       @presumed_in_flight = 0
-      
-      on_successful_connection = Proc(Nil,Nil).new {
+
+      on_successful_connection = Proc(Nil, Nil).new {
         start_monitoring_connection
       }
       open_connection(on_successful_connection)
@@ -131,16 +131,16 @@ module Nsq
       spawn do
         client = HTTP::Client.new("http://#{@host}:#{@port + 1}")
         client.connect_timeout = 10.seconds
-        client.read_timeout    = 10.seconds
+        client.read_timeout = 10.seconds
         response = client.get("/stats?format=json#{additional}")
         stats_completed = true
       end
-      
+
       loop do
         if stats_completed
           break
         else
-          if stats_wait_until > Time.now
+          if stats_wait_until > Time.utc
             sleep 0.05
           else
             raise "stats_timed_out"
@@ -381,7 +381,7 @@ module Nsq
       case frame.data
       when RESPONSE_HEARTBEAT
         debug "Received heartbeat"
-        @last_heartbeat = Time.now
+        @last_heartbeat = Time.utc
         nop
       when RESPONSE_OK
         debug "Received OK"
@@ -508,7 +508,6 @@ module Nsq
       else
         @connection_monitor_active = false
       end
-      
     end
 
     private def monitor_connection
@@ -566,7 +565,7 @@ module Nsq
           start_read_loop
           start_write_loop
           @connected = true
-          @last_heartbeat = Time.now
+          @last_heartbeat = Time.utc
           # we need to re-subscribe if there's a topic specified
           if @topic
             debug "Subscribing to #{@topic}"
@@ -584,7 +583,7 @@ module Nsq
         elsif @connect_completed
           break
         else
-          if connect_expected_completion > Time.now 
+          if connect_expected_completion > Time.utc
             sleep(0.01)
           else
             @connect_timed_out = true
@@ -593,7 +592,7 @@ module Nsq
         end
       end
       if on_successful_connection
-        on_successful_connection.as(Proc(Nil,Nil)).call(nil)
+        on_successful_connection.as(Proc(Nil, Nil)).call(nil)
       end
     end
 
@@ -606,7 +605,6 @@ module Nsq
         # @socket = nil
         @connected = false
       rescue e : Exception
-        
       end
     end
 
@@ -668,7 +666,6 @@ module Nsq
 
           snooze(sleep_seconds)
         rescue e : Exception
-          
         end
       end
       if ex
