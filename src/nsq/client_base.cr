@@ -12,7 +12,16 @@ module Nsq
     @add_connection_mutex = Mutex.new
 
     def connected?
-      @connections.values.any? { |c| !c.connected? }
+      @connections.values.any? { |c| c.connected? }
+    end
+
+    def stats(topic = nil, channel = nil)
+      c = @connections.values.first
+      if c
+        c.stats(topic, channel)
+      else
+        nil
+      end
     end
 
     def terminate
@@ -80,7 +89,7 @@ module Nsq
             # leave our current nsqd connections alone and try again later.
             # warn "Could not connect to any nsqlookupd instances in discovery loop"
           rescue e : Exception
-            # Larger exception related to timout or other network issues.  
+            # Larger exception related to timout or other network issues.
             # Keep going
           end
           sleep opts[:interval].as(Int)
@@ -118,7 +127,7 @@ module Nsq
       nsqd_opts[:connected_through_lookupd] = true
       new_nsqds.each do |nsqd|
         begin
-          #p [:adding_nsq, nsqd]
+          # p [:adding_nsq, nsqd]
           add_connection(nsqd, nsqd_opts.dup)
         rescue ex : Exception
           error "Failed to connect to nsqd @ #{nsqd}: #{ex}"

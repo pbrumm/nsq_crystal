@@ -69,7 +69,7 @@ module Nsq
       query = "ts=#{Time.utc.to_unix}"
       if topic
         uri.path = "/lookup"
-        query += "&topic=#{URI.escape(topic.as(String))}"
+        query += "&topic=#{URI.encode(topic.as(String))}"
       else
         uri.path = "/nodes"
       end
@@ -87,20 +87,20 @@ module Nsq
             client.read_timeout = 10.seconds
             response = client.get(uri.full_path)
             client_completed = true
-          rescue IO::Timeout
+          rescue IO::TimeoutError
             client_timed_out = true
           end
         end
         loop do
           if client_timed_out
-            raise IO::Timeout.new
+            raise IO::TimeoutError.new
           elsif client_completed
             break
           else
-            if client_wait_until > Time.now
+            if client_wait_until > Time.utc
               sleep 0.05
             else
-              raise IO::Timeout.new
+              raise IO::TimeoutError.new
             end
           end
         end

@@ -4,10 +4,9 @@ describe Nsq::Producer do
   describe "connecting directly to a single nsqd" do
     describe "::new" do
       it "should throw an exception when trying to connect to a server that\"s down" do
-        expect_raises(Errno) do
+        expect_raises(IO::Error) do
           producer = Nsq::Producer.new({
-            :host          => "localhost",
-            :port          => 4152,
+            :nsqd          => "localhost:4152",
             :topic         => "topic",
             :channel       => "channel",
             :nsqlookupd    => nil,
@@ -20,8 +19,7 @@ describe Nsq::Producer do
     describe "#connected?" do
       it "should return true when it is connected" do
         producer = Nsq::Producer.new({
-          :host          => "localhost",
-          :port          => 4150,
+          :nsqd          => "localhost:4150",
           :topic         => "topic",
           :channel       => "channel",
           :nsqlookupd    => nil,
@@ -80,7 +78,7 @@ describe Nsq::Producer do
         producer.topic_delete("topic")
 
         producer.write("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")
-
+        sleep 1
         expect(producer.topic_msgcount("topic")).to eq(10)
       end
 
@@ -95,6 +93,7 @@ describe Nsq::Producer do
         producer.topic_delete("topic")
 
         producer.deferred_write 1.0, "1"
+        sleep 1
         expect(producer.topic_msgcount("topic")).to eq(1)
       end
 
@@ -106,8 +105,10 @@ describe Nsq::Producer do
           :nsqlookupd    => nil,
           :max_in_flight => 1,
         })
+        producer.topic_delete("topic")
         producer.deferred_write 1.0, "1", "2", "3"
         # wait_for { message_count == 3 }
+        sleep 1
         expect(producer.topic_msgcount("topic")).to eq(3)
       end
 

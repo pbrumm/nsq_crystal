@@ -24,7 +24,7 @@ describe Nsq::Connection do
       connection = Nsq::Consumer.new({:host => "localhost", :port => 4150, :topic => "topic", :channel => "channel"})
 
       json = connection.stats("topic", "channel")
-      p json
+      expect(json.as(JSON::Any)["health"]).to eq("OK")
     end
   end
 
@@ -32,13 +32,13 @@ describe Nsq::Connection do
     it "should raise an exception if it cannot connect to nsqd" do
       # @nsqd.stop
 
-      expect_raises(Errno) do
+      expect_raises(IO::Error) do
         connection = Nsq::Connection.new({:host => "localhost", :port => 4152, :topic => "topic", :channel => "channel"})
       end
       # }.to raise_error(Errno::ECONNREFUSED)
     end
 
-    it "should raise an exception if it connects to something that isn\'t nsqd" do
+    it "should raise an exception if it connects to something that isn't nsqd" do
       connection = Nsq::Connection.new({:host => "localhost", :port => 4150, :topic => "topic", :channel => "channel"})
     end
 

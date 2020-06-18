@@ -6,7 +6,7 @@ describe Nsq::Consumer do
       it "should throw an exception when trying to connect to a server that\"s down" do
         connection = Nsq::Consumer.new({:host => "localhost", :port => 4150, :topic => "topic", :channel => "channel"})
 
-        expect_raises(Errno) do
+        expect_raises(IO::Error) do
           consumer = Nsq::Consumer.new({
             :host          => "localhost",
             :port          => 4152,

@@ -40,7 +40,7 @@ module Nsq
       @host = opts[:host].as(String) || (raise ArgumentError.new("host is required"))
       @port = opts[:port].as(Int32) || (raise ArgumentError.new("port is required"))
 
-      if opts.has_key?(:queue)
+      if opts.has_key?(:queue) && opts[:queue].is_a?(Channel(Message | Symbol))
         @queue = opts[:queue].as(Channel(Message | Symbol))
       else
         @queue = Channel(Message | Symbol).new
@@ -68,7 +68,7 @@ module Nsq
         @max_in_flight = 1
       end
 
-      if opts.has_key?(:connected_through_lookupd)
+      if opts.has_key?(:connected_through_lookupd) && opts[:connected_through_lookupd].is_a?(Bool)
         @connected_through_lookupd = opts[:connected_through_lookupd].as(Bool)
       end
       # if opts.has_key?(:tls_options)
@@ -96,7 +96,7 @@ module Nsq
       # end
 
       if @msg_timeout < 1000
-        raise ArgumentError.new("msg_timeout cannot be less than 1000. it\'s in milliseconds.")
+        raise ArgumentError.new("msg_timeout cannot be less than 1000. it's in milliseconds.")
       end
 
       # for outgoing communication
@@ -126,10 +126,10 @@ module Nsq
       end
       stats_timed_out = false
       stats_completed = false
-      response : String | Nil = nil
+      response : HTTP::Client::Response | Nil = nil
       stats_wait_until = 30.seconds.from_now
       spawn do
-        client = HTTP::Client.new("http://#{@host}:#{@port + 1}")
+        client = HTTP::Client.new(@host, @port + 1)
         client.connect_timeout = 10.seconds
         client.read_timeout = 10.seconds
         response = client.get("/stats?format=json#{additional}")
@@ -147,8 +147,8 @@ module Nsq
           end
         end
       end
-      if response.status_code == 200
-        data = JSON.parse(response.body)
+      if response && response.as(HTTP::Client::Response).status_code == 200
+        data = JSON.parse(response.as(HTTP::Client::Response).body)
         return data
       else
         return nil
@@ -189,7 +189,7 @@ module Nsq
         end
         if d["topics"]? && d["topics"].as_a?
           topics_info = d["topics"]
-          topic_matches = topics_info.select { |t| t["topic_name"] == topic }
+          topic_matches = topics_info.as_a.select { |t| t["topic_name"] == topic }
           if topic_matches.size > 0
             topic_info = topic_matches.first
             if topic_info
@@ -397,14 +397,14 @@ module Nsq
     private def receive_frame
       size = IO::ByteFormat::NetworkEndian.decode(Int32, @socket.as(IO))
       type = IO::ByteFormat::NetworkEndian.decode(Int32, @socket.as(IO))
-      raise IO::Timeout.new if @connect_timed_out
+      raise IO::TimeoutError.new if @connect_timed_out
 
       if type
         size -= 4 # we want the size of the data part and type already took up 4 bytes
         data = Slice(UInt8).new(size)
         # p [:read_data, size]
         @socket.as(IO).read(data)
-        raise IO::Timeout.new if @connect_timed_out
+        raise IO::TimeoutError.new if @connect_timed_out
         frame_class = frame_class_for_type(type)
         # p [:read_data_done]
         return frame_class.new(data, self)
@@ -551,6 +551,7 @@ module Nsq
 
     private def open_connection(on_successful_connection : Proc(Nil, Nil) | Nil = nil)
       @socket = TCPSocket.new(@host, @port, 10, 10)
+
       # write the version and IDENTIFY directly to the socket to make sure
       # it gets to nsqd ahead of anything in the `@write_queue`
       socket_block { |socket| socket.write("  V2".to_slice) }
@@ -579,7 +580,7 @@ module Nsq
       end
       loop do
         if @connect_timed_out
-          raise IO::Timeout.new
+          raise IO::TimeoutError.new
         elsif @connect_completed
           break
         else
@@ -651,7 +652,7 @@ module Nsq
         begin
           attempts += 1
           return block.call(attempts)
-        rescue ex : Socket::Error | IO::Error | Errno | Exception
+        rescue ex : Socket::Error | IO::Error | Exception
           raise ex if attempts >= max_attempts
 
           # The sleep time is an exponentially-increasing function of base_sleep_seconds.
