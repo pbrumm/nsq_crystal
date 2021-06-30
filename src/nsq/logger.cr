@@ -1,16 +1,4 @@
-require "logger"
-
 module Nsq
-  @@logger = Logger.new(STDOUT)
-
-  def self.logger
-    @@logger
-  end
-
-  def self.logger=(new_logger)
-    @@logger = new_logger
-  end
-
   module AttributeLogger
     def self.included(klass)
       klass.send :class_variable_set, @@log_attributes.to_sym, Array.new(String)

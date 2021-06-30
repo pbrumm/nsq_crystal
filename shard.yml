@@ -4,10 +4,6 @@ version: 0.1.0
 authors:
   - Pete Brumm <pete@petebrumm.com>
 
-crystal: 0.21.1
+crystal: 1.0.0
 
 license: MIT
-
-dependencies:
-  expect:
-    github: dukex/expect.cr

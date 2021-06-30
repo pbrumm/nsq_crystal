@@ -85,7 +85,7 @@ module Nsq
             client = HTTP::Client.new(uri)
             client.connect_timeout = 10.seconds
             client.read_timeout = 10.seconds
-            response = client.get(uri.full_path)
+            response = client.get(uri.path)
             client_completed = true
           rescue IO::TimeoutError
             client_timed_out = true
